@@ -3300,11 +3300,12 @@ void homekit_server_on_pairings(client_context_t *context, const byte *data, siz
                                 homekit_storage_pairing_iterator_done(&pairing_it);
 
                                 if (!admin_found) {
-                                        // No admins left, enable pairing again
-                                        INFO("Last admin pairing was removed, enabling pair setup");
+                                        // No admins left, start over again
+                                        INFO("Last admin pairing was removed, restoring Homekit to factory default and restart");
 
-                                        context->server->paired = false;
-                                        homekit_setup_mdns(context->server);
+                                        homekit_storage_reset();
+                                        vTaskDelay(50); //allow other stuff to settle
+                                        esp_restart();
                                 }
                         }
                 }
@@ -3363,6 +3364,15 @@ void homekit_server_on_pairings(client_context_t *context, const byte *data, siz
                 break;
         }
         }
+
+        //show the current state of pairing records
+        pairing_iterator_t pairing_it;
+        homekit_storage_pairing_iterator_init(&pairing_it);
+        pairing_t pairing;
+        while (!homekit_storage_next_pairing(&pairing_it, &pairing)) {
+            INFO("Paired with %s with permission %d", pairing.device_id, pairing.permissions);
+        }
+        homekit_storage_pairing_iterator_done(&pairing_it);
 
         tlv_free(message);
 }
@@ -4134,10 +4144,10 @@ void homekit_server_task(void *args) {
 
         pairing_t pairing;
         while (!homekit_storage_next_pairing(&pairing_it, &pairing)) {
-                if (pairing.permissions & pairing_permissions_admin) {
-                        INFO("Found admin pairing with %s, disabling pair setup", pairing.device_id);
+                INFO("Paired with %s with permission %d", pairing.device_id, pairing.permissions);
+                if ( server->paired==false && (pairing.permissions & pairing_permissions_admin)) {
+                        INFO("Found admin pairing, disabling pair setup");
                         server->paired = true;
-                        break;
                 }
         }
         homekit_storage_pairing_iterator_done(&pairing_it);

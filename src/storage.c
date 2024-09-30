@@ -145,6 +145,7 @@ int homekit_storage_find_pairing(const char *device_id, pairing_t *pairing) {
                         }
                         pairing->id = i;
                         strncpy(pairing->device_id, data.device_id, DEVICE_ID_SIZE);
+                        pairing->device_id[DEVICE_ID_SIZE]=0; //terminate the string since strncpy won't do it for us
                         pairing->permissions = data.permissions;
                         return 0;
                 }
@@ -170,7 +171,7 @@ int homekit_storage_add_pairing(const char *device_id, const ed25519_key *device
                 snprintf(key, sizeof(key), PAIRING_KEY_PREFIX "%d", i);
 
                 size_t size = sizeof(data);
-                esp_err_t err = nvs_get_blob(homekit_nvs_handle, key, &data, &size);
+                esp_err_t err = nvs_get_blob(homekit_nvs_handle, key, NULL, &size); //don't read data, only detect empty slot
                 if (err == ESP_ERR_NVS_NOT_FOUND) {
                         // Write the pairing data to this empty slot
                         err = nvs_set_blob(homekit_nvs_handle, key, &data, sizeof(data));
@@ -231,7 +232,8 @@ int homekit_storage_can_add_pairing() {
 
 int homekit_storage_remove_pairing(const char *device_id) {
         pairing_data_t data;
-        for (int i = 0; i < MAX_PAIRINGS; i++) {
+        bool found=false;
+        for (int i = 0; i < MAX_PAIRINGS; i++) { //scan ALL slots, due to bug in old code, device_id can exist more than once
                 char key[PAIRING_KEY_MAX_LEN];
                 snprintf(key, sizeof(key), PAIRING_KEY_PREFIX "%d", i);
 
@@ -250,11 +252,15 @@ int homekit_storage_remove_pairing(const char *device_id) {
                                 ERROR("Failed to remove pairing from HomeKit storage: %s", esp_err_to_name(err));
                                 return -1;
                         }
-                        nvs_commit(homekit_nvs_handle);
-                        return 0;
+                        found=true;
                 }
         }
-        return -1;
+        if (found) {
+                nvs_commit(homekit_nvs_handle);
+                return 0;
+        } else {
+                return -1;
+        }
 }
 
 void homekit_storage_pairing_iterator_init(pairing_iterator_t *it) {
@@ -288,6 +294,7 @@ int homekit_storage_next_pairing(pairing_iterator_t *it, pairing_t *pairing) {
                         }
                         pairing->id = it->idx - 1;
                         strncpy(pairing->device_id, data.device_id, DEVICE_ID_SIZE);
+                        pairing->device_id[DEVICE_ID_SIZE]=0; //terminate the string since strncpy won't do it for us
                         pairing->permissions = data.permissions;
                         return 0;
                 }
